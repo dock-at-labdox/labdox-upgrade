@@ -1,0 +1,38 @@
+# dependencies
+node_modules/
+
+# next
+.next/
+out/
+*.tsbuildinfo
+
+# env — never commit secrets (DEC-028)
+.env
+.env.local
+.env.*.local
+
+# prisma
+prisma/*.db
+prisma/*.db-journal
+
+# supabase local
+supabase/.temp/
+supabase/.branches/
+
+# vercel
+.vercel
+
+# test / coverage
+coverage/
+playwright-report/
+test-results/
+.lighthouseci/
+
+# os / editor
+.DS_Store
+*.log
+.idea/
+.vscode/
+
+# local dumps (Swipepages media export, etc.)
+tmp/

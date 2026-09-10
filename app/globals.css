@@ -1,0 +1,33 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --pill-red: #ff2b2b;
+  --pill-blue: #00a6ff;
+}
+
+@layer base {
+  html {
+    background: #050505;
+  }
+
+  body {
+    @apply bg-void text-ink antialiased;
+  }
+
+  :focus-visible {
+    outline: 2px solid #7cffa0;
+    outline-offset: 2px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

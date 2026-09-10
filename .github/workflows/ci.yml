@@ -1,0 +1,102 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  branch-name:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enforce feat/fix/content/docs prefixes
+        run: |
+          name="${{ github.head_ref }}"
+          echo "$name" | grep -Eq '^(feat|fix|content|docs)/.+' || {
+            echo "Branch must start with feat/, fix/, content/, or docs/"
+            exit 1
+          }
+
+  quality:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:54322/postgres
+      DIRECT_URL: postgresql://postgres:postgres@localhost:54322/postgres
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 54322:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Prisma schema is valid and client generates
+        run: pnpm prisma validate && pnpm prisma generate
+      - name: Migration drift check (schema.prisma matches committed migrations)
+        run: pnpm prisma migrate diff --from-migrations ./prisma/migrations --to-schema-datamodel ./prisma/schema.prisma --shadow-database-url "$DIRECT_URL" --exit-code
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Lint
+        run: pnpm lint
+      - name: Unit tests (engine, AI validation, repositories)
+        run: pnpm test -- --coverage
+      - name: Traceability gate
+        run: pnpm run check:traceability
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Boot local Supabase + migrate + seed
+        run: |
+          cp .env.example .env
+          supabase start
+          pnpm prisma migrate deploy
+          pnpm prisma db seed
+      - name: Playwright E2E + axe accessibility + privacy payload inspection
+        run: pnpm test:e2e
+      - name: Lighthouse CI (perf/SEO/a11y ≥ 90 on key routes)
+        run: pnpm run lhci
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Secret scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Dependency audit
+        run: pnpm audit --audit-level high

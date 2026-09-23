@@ -12,7 +12,7 @@ export const MICROCOPY = {
   },
   blue: {
     prompt: "What are you looking for?",
-    placeholder: ["data analytics job", "UI/UX portfolio", "automate my operations"],
+    placeholder: ["Data analytics job", "UI/UX portfolio", "automate my operations"],
   },
   red: {
     prompt: "What do you want to achieve?",

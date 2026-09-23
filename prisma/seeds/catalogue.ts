@@ -40,7 +40,10 @@ export type CatalogueReport = {
   archived: number;
 };
 
-function stripReview(value: string): { tokens: string[]; needsReview: boolean } {
+function stripReview(value: string): {
+  tokens: string[];
+  needsReview: boolean;
+} {
   const needsReview = /\[auto — review\]/i.test(value);
   const tokens = value
     .replace(/\[auto — review\]/gi, "")
@@ -50,11 +53,10 @@ function stripReview(value: string): { tokens: string[]; needsReview: boolean } 
   return { tokens, needsReview };
 }
 
-function parseHours(raw: string, type: string): number | null {
+function parseHours(raw: string): number | null {
   const numeric = raw.trim().match(/^(\d+(?:\.\d+)?)$/);
   if (numeric) return Number(numeric[1]);
-  if (type !== "course") return null;
-  throw new Error(`Course is missing numeric hours: "${raw}"`);
+  return null;
 }
 
 function parseDelivery(raw: string): string[] {
@@ -71,13 +73,19 @@ function parseDelivery(raw: string): string[] {
     .filter((mode) => DELIVERY_SLUGS.has(mode));
 }
 
-function parsePrice(raw: string): { pricingMode: "display" | "enquiry"; priceInrPerHour: number | null } {
+function parsePrice(raw: string): {
+  pricingMode: "display" | "enquiry";
+  priceInrPerHour: number | null;
+} {
   const match = raw.match(/INR\s+(\d+(?:\.\d+)?)\s*\/\s*hr/i);
-  if (match) return { pricingMode: "display", priceInrPerHour: Number(match[1]) };
+  if (match)
+    return { pricingMode: "display", priceInrPerHour: Number(match[1]) };
   return { pricingMode: "enquiry", priceInrPerHour: null };
 }
 
-export async function seedCatalogue(prisma: PrismaClient): Promise<CatalogueReport> {
+export async function seedCatalogue(
+  prisma: PrismaClient,
+): Promise<CatalogueReport> {
   const parsed = parse(readFileSync(CSV, "utf8"), {
     columns: true,
     skip_empty_lines: true,
@@ -93,29 +101,38 @@ export async function seedCatalogue(prisma: PrismaClient): Promise<CatalogueRepo
   });
 
   const seen = new Set<string>();
-  const byType: Record<string, number> = { course: 0, track: 0, service: 0, engagement: 0 };
+  const byType: Record<string, number> = {
+    course: 0,
+    track: 0,
+    service: 0,
+    engagement: 0,
+  };
 
   for (const [index, row] of rows.entries()) {
     const line = index + 2;
-    if (seen.has(row["Item ID"])) throw new Error(`CSV row ${line}: duplicate itemId ${row["Item ID"]}`);
+    if (seen.has(row["Item ID"]))
+      throw new Error(`CSV row ${line}: duplicate itemId ${row["Item ID"]}`);
     seen.add(row["Item ID"]);
 
     const domainSlug = DOMAIN_SLUG_BY_LABEL.get(row.Domain.toLowerCase());
-    if (!domainSlug) throw new Error(`CSV row ${line}: unknown domain "${row.Domain}"`);
+    if (!domainSlug)
+      throw new Error(`CSV row ${line}: unknown domain "${row.Domain}"`);
 
     const levelSlug = LEVEL_SLUG_BY_LABEL.get(row.Level.toLowerCase());
-    if (!levelSlug) throw new Error(`CSV row ${line}: unknown level "${row.Level}"`);
+    if (!levelSlug)
+      throw new Error(`CSV row ${line}: unknown level "${row.Level}"`);
 
     const audience = stripReview(row["Audience Tags"]);
     const intents = stripReview(row["Intent Tags"]);
     for (const tag of audience.tokens) {
-      if (!AUDIENCE_SLUGS.has(tag)) throw new Error(`CSV row ${line}: unknown audience "${tag}"`);
+      if (!AUDIENCE_SLUGS.has(tag))
+        throw new Error(`CSV row ${line}: unknown audience "${tag}"`);
     }
     for (const tag of intents.tokens) {
-      if (!INTENT_SLUGS.has(tag)) throw new Error(`CSV row ${line}: unknown intent "${tag}"`);
+      if (!INTENT_SLUGS.has(tag))
+        throw new Error(`CSV row ${line}: unknown intent "${tag}"`);
     }
-
-    const hours = parseHours(row["Duration (hours)"], row.Type);
+    const hours = parseHours(row["Duration (hours)"]);
     const price = parsePrice(row["Price Basis"]);
     const slug = `${slugify(row.Name)}-${row["Item ID"].toLowerCase()}`;
 
@@ -136,7 +153,10 @@ export async function seedCatalogue(prisma: PrismaClient): Promise<CatalogueRepo
       status: row.Status.toLowerCase().includes("editorial review")
         ? "draft"
         : "published",
-      needsEditorialReview: audience.needsReview || intents.needsReview || row.Status.includes("editorial"),
+      needsEditorialReview:
+        audience.needsReview ||
+        intents.needsReview ||
+        row.Status.includes("editorial"),
       sourcePath: CSV,
     };
 
@@ -153,15 +173,23 @@ export async function seedCatalogue(prisma: PrismaClient): Promise<CatalogueRepo
   }
 
   const missing = await prisma.catalogueItem.updateMany({
-    where: { itemId: { notIn: [...seen] }, status: { not: "archived_pending_review" } },
+    where: {
+      itemId: { notIn: [...seen] },
+      status: { not: "archived_pending_review" },
+    },
     data: { status: "archived_pending_review" },
   });
 
-  const versionRow = await prisma.meta.findUnique({ where: { key: "catalogueVersion" } });
+  const versionRow = await prisma.meta.findUnique({
+    where: { key: "catalogueVersion" },
+  });
   const nextVersion =
     versionRow && typeof versionRow.value === "number"
       ? versionRow.value + 1
-      : versionRow && typeof versionRow.value === "object" && versionRow.value !== null && "n" in versionRow.value
+      : versionRow &&
+          typeof versionRow.value === "object" &&
+          versionRow.value !== null &&
+          "n" in versionRow.value
         ? Number((versionRow.value as { n: number }).n) + 1
         : 1;
 
@@ -174,8 +202,14 @@ export async function seedCatalogue(prisma: PrismaClient): Promise<CatalogueRepo
   return { byType, archived: missing.count };
 }
 
-async function syncAudiences(prisma: PrismaClient, itemId: string, tags: string[]) {
-  await prisma.catalogueItemAudience.deleteMany({ where: { itemId, tag: { notIn: tags } } });
+async function syncAudiences(
+  prisma: PrismaClient,
+  itemId: string,
+  tags: string[],
+) {
+  await prisma.catalogueItemAudience.deleteMany({
+    where: { itemId, tag: { notIn: tags } },
+  });
   for (const tag of tags) {
     await prisma.catalogueItemAudience.upsert({
       where: { itemId_tag: { itemId, tag } },
@@ -185,8 +219,14 @@ async function syncAudiences(prisma: PrismaClient, itemId: string, tags: string[
   }
 }
 
-async function syncIntents(prisma: PrismaClient, itemId: string, tags: string[]) {
-  await prisma.catalogueItemIntent.deleteMany({ where: { itemId, tag: { notIn: tags } } });
+async function syncIntents(
+  prisma: PrismaClient,
+  itemId: string,
+  tags: string[],
+) {
+  await prisma.catalogueItemIntent.deleteMany({
+    where: { itemId, tag: { notIn: tags } },
+  });
   for (const tag of tags) {
     await prisma.catalogueItemIntent.upsert({
       where: { itemId_tag: { itemId, tag } },

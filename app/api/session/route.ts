@@ -1,19 +1,25 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { IntentSessionRepo } from "@/lib/data/repos";
+import type {
+  ApiErrorResponse,
+  SessionResponse,
+  SessionStateResponse,
+} from "@/lib/api/contracts";
+
+const SESSION_COOKIE = "labdox_session";
 
 export async function POST() {
   try {
     const session = await IntentSessionRepo.create();
 
-    const response = NextResponse.json(
-      {
-        sessionId: session.id,
-        expiresAt: session.expiresAt,
-      },
-      { status: 201 },
-    );
+    const body: SessionResponse = {
+      sessionId: session.id,
+      expiresAt: session.expiresAt.toISOString(),
+    };
 
-    response.cookies.set("labdox_session", session.id, {
+    const response = NextResponse.json(body, { status: 201 });
+
+    response.cookies.set(SESSION_COOKIE, session.id, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
@@ -25,9 +31,52 @@ export async function POST() {
   } catch (error) {
     console.error("Failed to create session", error);
 
-    return NextResponse.json(
-      { error: "SESSION_CREATION_FAILED" },
-      { status: 500 },
-    );
+    const body: ApiErrorResponse = {
+      error: "SESSION_CREATION_FAILED",
+    };
+
+    return NextResponse.json(body, { status: 500 });
+  }
+}
+
+export async function GET(request: NextRequest) {
+  const sessionId = request.cookies.get(SESSION_COOKIE)?.value;
+
+  if (!sessionId) {
+    const body: ApiErrorResponse = {
+      error: "SESSION_NOT_FOUND",
+    };
+
+    return NextResponse.json(body, { status: 401 });
+  }
+
+  try {
+    const session = await IntentSessionRepo.getById(sessionId);
+
+    if (!session || session.expiresAt <= new Date()) {
+      const body: ApiErrorResponse = {
+        error: "SESSION_NOT_FOUND",
+      };
+
+      return NextResponse.json(body, { status: 401 });
+    }
+
+    const body: SessionStateResponse = {
+      sessionId: session.id,
+      expiresAt: session.expiresAt.toISOString(),
+      pill: session.pill,
+      audienceDerived: session.audienceDerived,
+      conversionState: session.conversionState,
+    };
+
+    return NextResponse.json(body);
+  } catch (error) {
+    console.error("Failed to retrieve session", error);
+
+    const body: ApiErrorResponse = {
+      error: "SESSION_RETRIEVAL_FAILED",
+    };
+
+    return NextResponse.json(body, { status: 500 });
   }
 }

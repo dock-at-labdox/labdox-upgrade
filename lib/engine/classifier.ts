@@ -1,12 +1,1 @@
-/** Deterministic keyword/synonym classifier — always runs first (DEC-026). Full map is Sprint 2. */
-export type Classification = {
-  intentTag: string | null;
-  domainSlug: string | null;
-  audience: string | null;
-  confidence: number;
-};
-
-export function classifyStatement(text: string): Classification {
-  void text;
-  return { intentTag: null, domainSlug: null, audience: null, confidence: 0 };
-}
+export type Classification = {  intentTag: string | null;  domainSlug: string | null;  audience: string | null;  confidence: number;};const INTENT_KEYWORDS: Record<string, string[]> = {  first_job: ["first job", "first-job", "fresher", "fresh graduate"],  switch_career: [    "switch career",    "career switch",    "change career",    "career change",  ],  upskill: ["upskill", "improve skills", "skill development"],  grow_business: ["grow business", "business growth", "grow my business"],  explore: ["explore", "looking around", "learn something new"],  solve_problem: ["solve problem", "need help", "challenge"],};export function classifyStatement(text: string): Classification {  const normalized = text.trim().toLowerCase();  if (!normalized) {    return {      intentTag: null,      domainSlug: null,      audience: null,      confidence: 0,    };  }  for (const [intentTag, keywords] of Object.entries(INTENT_KEYWORDS)) {    if (keywords.some((keyword) => normalized.includes(keyword))) {      return {        intentTag,        domainSlug: null,        audience: null,        confidence: 0.8,      };    }  }  return {    intentTag: null,    domainSlug: null,    audience: null,    confidence: 0,  };}

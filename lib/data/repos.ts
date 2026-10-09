@@ -1,4 +1,5 @@
 import { prisma } from "./prisma";
+import type { Prisma } from "@prisma/client";
 
 const SESSION_DURATION_MS = 1000 * 60 * 60 * 24 * 30;
 
@@ -45,6 +46,15 @@ export const FeedbackRepo = {
     });
   },
 };
+
+  type CatalogueListOptions = {
+  type?: string;
+  domain?: string;
+  level?: string;
+  audience?: string;
+  intent?: string;
+};
+
 export const CatalogueRepo = {
   async getBySlug(slug: string) {
     if (!slug.trim()) {
@@ -62,18 +72,33 @@ export const CatalogueRepo = {
     return item;
   },
 
-  async list(options?: { type?: string }) {
-    const where: Record<string, unknown> = {
-      status: "published",
+  async list(options?: CatalogueListOptions) {
+    const where: Prisma.CatalogueItemWhereInput = {
+      status: "published", // hard rule: public API mein drafts kabhi nahi
     };
 
     if (options?.type) {
       where.type = options.type;
     }
+    if (options?.domain) {
+      where.domain = options.domain;
+    }
+    if (options?.level) {
+      where.level = options.level;
+    }
+    if (options?.audience) {
+      where.audiences = { some: { tag: options.audience } };
+    }
+    if (options?.intent) {
+      where.intents = { some: { tag: options.intent } };
+    }
 
     return prisma.catalogueItem.findMany({
       where,
+      include: { audiences: true, intents: true },
       orderBy: { name: "asc" },
     });
   },
 };
+
+

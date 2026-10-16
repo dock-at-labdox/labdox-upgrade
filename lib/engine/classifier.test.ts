@@ -1,7 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { classifyStatement } from "./classifier";
 
 describe("classifyStatement", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    delete process.env.AI_ENABLED;
+    delete process.env.AI_API_KEY;
+  });
+
   it("classifies a career switch request", () => {
     const result = classifyStatement("I want to switch career");
 
@@ -43,5 +49,16 @@ describe("classifyStatement", () => {
       audience: null,
       confidence: 0,
     });
+  });
+
+  it("keeps Blue's deterministic classifier isolated from the AI provider", () => {
+    process.env.AI_ENABLED = "true";
+    process.env.AI_API_KEY = "synthetic-test-key";
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    expect(classifyStatement("I want to switch careers").intentTag).toBe(
+      "switch_career",
+    );
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 });

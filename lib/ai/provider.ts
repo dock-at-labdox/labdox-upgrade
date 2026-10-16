@@ -7,6 +7,11 @@ import {
 
 export type AiProviderName = "gemini" | "mock";
 
+export type AiOutputRejectionClass =
+  | "schema_mismatch"
+  | "unsupported_numeric_claim"
+  | "invalid_catalogue_id";
+
 export type AiFailure =
   | "disabled"
   | "timeout"
@@ -14,30 +19,94 @@ export type AiFailure =
   | "provider_error"
   | "invalid_output";
 
+type AiFailedResult = {
+  ok: false;
+  failure: AiFailure;
+  rejectionClass?: AiOutputRejectionClass;
+};
+
 export type AiClassificationResult =
   | {
       ok: true;
       provider: AiProviderName;
+      model: string;
       output: ClassificationV1;
     }
-  | {
-      ok: false;
-      failure: AiFailure;
-    };
+  | AiFailedResult;
 
 export type AiRecommendationResult =
   | {
       ok: true;
       provider: AiProviderName;
+      model: string;
       output: RecommendationV1;
     }
-  | {
-      ok: false;
-      failure: AiFailure;
-    };
+  | AiFailedResult;
 
 const DEFAULT_TIMEOUT_MS = 3000;
 const MAX_RETRIES = 1;
+const GOOGLE_API_BASE_URL =
+  "https://generativelanguage.googleapis.com/v1beta/models";
+
+const classificationResponseSchema = {
+  type: "OBJECT",
+  properties: {
+    schemaVersion: { type: "STRING", enum: ["classification.v1"] },
+    goalTag: {
+      type: "STRING",
+      enum: [
+        "first_job",
+        "switch_career",
+        "upskill",
+        "grow_business",
+        "explore",
+        "solve_problem",
+      ],
+      nullable: true,
+    },
+    passionTheme: {
+      type: "STRING",
+      enum: [
+        "building",
+        "analyzing",
+        "creating",
+        "helping",
+        "persuading",
+        "organizing",
+      ],
+      nullable: true,
+    },
+    topicKeywords: { type: "ARRAY", items: { type: "STRING" } },
+    confidence: { type: "NUMBER" },
+    clarificationNeeded: { type: "BOOLEAN" },
+  },
+  required: ["schemaVersion", "goalTag", "confidence", "clarificationNeeded"],
+};
+
+const recommendationResponseSchema = {
+  type: "OBJECT",
+  properties: {
+    schemaVersion: { type: "STRING", enum: ["recommendation.v1"] },
+    rankedItems: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: {
+          itemId: { type: "STRING" },
+          reason: { type: "STRING" },
+        },
+        required: ["itemId", "reason"],
+      },
+    },
+  },
+  required: ["schemaVersion", "rankedItems"],
+};
+
+function getModel(): string | null {
+  const model = process.env.AI_MODEL;
+
+  return model && /^gemini-[a-z0-9.-]+$/i.test(model) ? model : null;
+}
 
 function getTimeoutMs(): number {
   const configured = Number(process.env.AI_TIMEOUT_MS ?? DEFAULT_TIMEOUT_MS);
@@ -50,49 +119,148 @@ function getTimeoutMs(): number {
 }
 
 export function isAiEnabled(): boolean {
-  return process.env.AI_ENABLED === "true" && Boolean(process.env.AI_API_KEY);
+  const provider = process.env.AI_PROVIDER ?? "gemini";
+  return (
+    process.env.AI_ENABLED === "true" &&
+    provider === "gemini" &&
+    Boolean(process.env.AI_API_KEY) &&
+    getModel() !== null
+  );
 }
 
 function createTimeoutSignal(timeoutMs: number): AbortSignal {
   return AbortSignal.timeout(timeoutMs);
 }
 
+class InvalidAiOutputError extends Error {
+  constructor(readonly rejectionClass: AiOutputRejectionClass) {
+    super("Gemini returned an invalid structured response.");
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function createGeminiRequest(input: unknown): Record<string, unknown> {
+  if (!isRecord(input) || !isRecord(input.input)) {
+    throw new Error("Invalid AI operation input.");
+  }
+
+  const operation = input.operation;
+
+  if (operation !== "classify" && operation !== "recommend") {
+    throw new Error("Unsupported AI operation.");
+  }
+
+  const systemInstruction =
+    operation === "classify"
+      ? "Classify the supplied visitor goal. Return only JSON matching the response schema. Use only the allowed taxonomy values. If unclear, use a null goalTag and set clarificationNeeded to true. Do not infer sensitive traits."
+      : "Rank only the supplied candidate item IDs. Return only JSON matching the response schema. Reasons must be short, refer only to supplied inputs, contain no numeric claims, and make no factual claims about Labdox.";
+
+  const serializedInput = JSON.stringify(input.input);
+  if (serializedInput.length > 16_000) {
+    throw new Error("AI provider input exceeds the configured size limit.");
+  }
+
+  return {
+    systemInstruction: {
+      parts: [{ text: systemInstruction }],
+    },
+    contents: [
+      {
+        role: "user",
+        parts: [{ text: serializedInput }],
+      },
+    ],
+    generationConfig: {
+      responseMimeType: "application/json",
+      maxOutputTokens: 512,
+      responseSchema:
+        operation === "classify"
+          ? classificationResponseSchema
+          : recommendationResponseSchema,
+    },
+  };
+}
+
+function parseGeminiResponse(value: unknown): unknown {
+  if (!isRecord(value) || !Array.isArray(value.candidates)) {
+    throw new InvalidAiOutputError("schema_mismatch");
+  }
+
+  const candidate = value.candidates[0];
+  if (!isRecord(candidate) || !isRecord(candidate.content)) {
+    throw new InvalidAiOutputError("schema_mismatch");
+  }
+
+  const parts = candidate.content.parts;
+  if (!Array.isArray(parts)) {
+    throw new InvalidAiOutputError("schema_mismatch");
+  }
+
+  const text = parts
+    .filter(isRecord)
+    .map((part) => part.text)
+    .filter((part): part is string => typeof part === "string")
+    .join("");
+
+  if (!text) {
+    throw new InvalidAiOutputError("schema_mismatch");
+  }
+
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    throw new InvalidAiOutputError("schema_mismatch");
+  }
+}
+
 async function callProvider(input: unknown): Promise<unknown> {
   const apiKey = process.env.AI_API_KEY;
+  const model = getModel();
 
-  if (!apiKey) {
-    throw new Error("AI_API_KEY is not configured.");
+  if (!apiKey || !model) {
+    throw new Error("Gemini provider configuration is incomplete.");
   }
 
-  const providerUrl = process.env.AI_PROVIDER_URL;
-
-  if (!providerUrl) {
-    throw new Error("AI_PROVIDER_URL is not configured.");
-  }
-
-  const response = await fetch(providerUrl, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      authorization: `Bearer ${apiKey}`,
+  const response = await fetch(
+    `${GOOGLE_API_BASE_URL}/${encodeURIComponent(model)}:generateContent`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-goog-api-key": apiKey,
+      },
+      body: JSON.stringify(createGeminiRequest(input)),
+      signal: createTimeoutSignal(getTimeoutMs()),
+      cache: "no-store",
     },
-    body: JSON.stringify(input),
-    signal: createTimeoutSignal(getTimeoutMs()),
-    cache: "no-store",
-  });
+  );
 
   if (response.status === 429) {
     throw new Error("AI_RATE_LIMIT");
   }
 
   if (!response.ok) {
-    throw new Error(`AI provider returned HTTP ${response.status}.`);
+    throw new Error(`Gemini provider returned HTTP ${response.status}.`);
   }
 
-  return response.json();
+  let responseBody: unknown;
+  try {
+    responseBody = await response.json();
+  } catch {
+    throw new InvalidAiOutputError("schema_mismatch");
+  }
+
+  return parseGeminiResponse(responseBody);
 }
 
 function classifyFailure(error: unknown): AiFailure {
+  if (error instanceof InvalidAiOutputError) {
+    return "invalid_output";
+  }
+
   if (error instanceof DOMException && error.name === "TimeoutError") {
     return "timeout";
   }
@@ -116,25 +284,20 @@ async function callProviderWithRetry(input: unknown): Promise<
   | {
       ok: false;
       failure: AiFailure;
+      rejectionClass?: AiOutputRejectionClass;
     }
 > {
   let lastFailure: AiFailure = "provider_error";
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
     try {
-      const output = await callProvider(input);
-
       return {
         ok: true,
-        output,
+        output: await callProvider(input),
       };
     } catch (error) {
       lastFailure = classifyFailure(error);
 
-      /*
-       * Rate-limit responses are not retried.
-       * The provider has explicitly told us to stop.
-       */
       if (lastFailure === "rate_limit") {
         return {
           ok: false,
@@ -142,11 +305,14 @@ async function callProviderWithRetry(input: unknown): Promise<
         };
       }
 
-      /*
-       * Retry only once for timeout/provider
-       * failures. The loop permits exactly one
-       * additional provider call.
-       */
+      if (error instanceof InvalidAiOutputError) {
+        return {
+          ok: false,
+          failure: lastFailure,
+          rejectionClass: error.rejectionClass,
+        };
+      }
+
       if (attempt < MAX_RETRIES) {
         continue;
       }
@@ -169,26 +335,49 @@ export function validateClassificationOutput(
 ): ClassificationV1 | null {
   const result = classificationV1Schema.safeParse(value);
 
-  if (!result.success) {
-    return null;
-  }
-
-  return result.data;
+  return result.success ? result.data : null;
 }
 
 function containsNumericClaim(reason: string): boolean {
-  /*
-   * Recommendation reasons are user-facing
-   * explanations, not a place for unsupported
-   * numeric claims such as "95% placement",
-   * "3 months", "10 courses", etc.
-   */
-  return /\d/.test(reason);
+  return (
+    /\d/.test(reason) ||
+    /\b(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|dozens?|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundreds?|thousands?|millions?|billions?|once|twice|thrice|double|triple|half|quarter|couple|pair|few|several|multiple|numerous)\b/i.test(
+      reason,
+    ) ||
+    /\b(?:percent|percentage|months?|weeks?|days?|hours?|years?)\b/i.test(
+      reason,
+    )
+  );
+}
+
+function hasInvalidCatalogueId(
+  value: unknown,
+  allowedItemIds?: ReadonlySet<string>,
+): boolean {
+  if (!isRecord(value) || !Array.isArray(value.rankedItems)) {
+    return false;
+  }
+
+  return value.rankedItems.some((item) => {
+    if (!isRecord(item) || typeof item.itemId !== "string") {
+      return false;
+    }
+
+    return (
+      !/^(CRS-\d{3}|TRK-[A-Z]+|SVC-[A-Z]+|ENG-[A-Z]+)$/.test(item.itemId) ||
+      (allowedItemIds !== undefined && !allowedItemIds.has(item.itemId))
+    );
+  });
 }
 
 export function validateRecommendationOutput(
   value: unknown,
+  allowedItemIds?: ReadonlySet<string>,
 ): RecommendationV1 | null {
+  if (hasInvalidCatalogueId(value, allowedItemIds)) {
+    return null;
+  }
+
   const result = recommendationV1Schema.safeParse(value);
 
   if (!result.success) {
@@ -204,10 +393,33 @@ export function validateRecommendationOutput(
   return result.data;
 }
 
+function getRecommendationRejectionClass(
+  value: unknown,
+  allowedItemIds?: ReadonlySet<string>,
+): AiOutputRejectionClass {
+  if (hasInvalidCatalogueId(value, allowedItemIds)) {
+    return "invalid_catalogue_id";
+  }
+
+  const result = recommendationV1Schema.safeParse(value);
+  if (!result.success) {
+    return "schema_mismatch";
+  }
+
+  if (
+    result.data.rankedItems.some((item) => containsNumericClaim(item.reason))
+  ) {
+    return "unsupported_numeric_claim";
+  }
+
+  return "schema_mismatch";
+}
+
 export async function classifyWithAi(
   input: unknown,
 ): Promise<AiClassificationResult> {
-  if (!isAiEnabled()) {
+  const model = getModel();
+  if (!isAiEnabled() || !model) {
     return {
       ok: false,
       failure: "disabled",
@@ -229,20 +441,24 @@ export async function classifyWithAi(
     return {
       ok: false,
       failure: "invalid_output",
+      rejectionClass: "schema_mismatch",
     };
   }
 
   return {
     ok: true,
     provider: "gemini",
+    model,
     output,
   };
 }
 
 export async function recommendWithAi(
   input: unknown,
+  allowedItemIds?: ReadonlySet<string>,
 ): Promise<AiRecommendationResult> {
-  if (!isAiEnabled()) {
+  const model = getModel();
+  if (!isAiEnabled() || !model) {
     return {
       ok: false,
       failure: "disabled",
@@ -258,18 +474,23 @@ export async function recommendWithAi(
     return result;
   }
 
-  const output = validateRecommendationOutput(result.output);
+  const output = validateRecommendationOutput(result.output, allowedItemIds);
 
   if (!output) {
     return {
       ok: false,
       failure: "invalid_output",
+      rejectionClass: getRecommendationRejectionClass(
+        result.output,
+        allowedItemIds,
+      ),
     };
   }
 
   return {
     ok: true,
     provider: "gemini",
+    model,
     output,
   };
 }

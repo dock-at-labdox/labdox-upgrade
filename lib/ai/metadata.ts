@@ -1,30 +1,32 @@
 export type AiMetadata = {
   provider?: string;
-  model?: string;
-  promptVersion?: string;
-  schemaVersion?: string;
+  model: string | null;
+  promptVersion: string;
+  schemaVersion: string;
   catalogueVersion?: string;
   deterministicOnly: boolean;
+  fallback: boolean;
+  fallbackReason?: string;
 };
-
-const DEFAULT_PROMPT_VERSION = "ai-f-001-v1";
-
-const DEFAULT_SCHEMA_VERSION = "classification.v1";
 
 export function getAiMetadata(input: {
   deterministicOnly: boolean;
+  fallback?: boolean;
+  fallbackReason?: string;
   provider?: string;
   model?: string;
-  promptVersion?: string;
-  schemaVersion?: string;
+  promptVersion: string;
+  schemaVersion: string;
   catalogueVersion?: string;
 }): AiMetadata {
   return {
-    provider: input.provider,
-    model: input.model,
-    promptVersion: input.promptVersion ?? DEFAULT_PROMPT_VERSION,
-    schemaVersion: input.schemaVersion ?? DEFAULT_SCHEMA_VERSION,
+    provider: input.provider ?? "deterministic",
+    model: input.model ?? null,
+    promptVersion: input.promptVersion,
+    schemaVersion: input.schemaVersion,
     catalogueVersion: input.catalogueVersion,
     deterministicOnly: input.deterministicOnly,
+    fallback: input.fallback ?? false,
+    fallbackReason: input.fallbackReason,
   };
 }

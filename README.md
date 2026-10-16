@@ -46,7 +46,7 @@ Studio: http://localhost:54323
 - Prisma schema + seed against local Supabase
 - GitHub Actions CI stub and Vercel project config
 
-Not in this slice: Gemini, HubSpot, full quiz, Stitch UI, audience-card Blue wall, chatbot, custom CRM.
+Not in this slice: live Gemini enablement (blocked pending the golden evaluation), HubSpot, full quiz, Stitch UI, audience-card Blue wall, chatbot, custom CRM.
 
 ## Scripts
 
@@ -68,3 +68,12 @@ pnpm prisma db seed
 5. After HubSpot / GA4 IDs exist, paste them into the Vercel dashboard. Then add GitHub secrets `DATABASE_URL`, `DIRECT_URL`, and `VERCEL_DEPLOY_HOOK_URL` so `.github/workflows/deploy.yml` can migrate before a production promote.
 
 `AI_ENABLED` stays `false` until the golden set passes. Blue never calls Gemini even when the flag is true.
+
+AI requests use shared Postgres hourly buckets (10 calls per hour per IP and
+session) and atomically reserve daily budget before contacting Gemini. Provider
+calls remain disabled unless `AI_MAX_REQUEST_COST_USD` is configured as a
+conservative upper bound for the request and its retry; usage-store failures
+fall back to deterministic results. `AI_MODEL` must be explicitly configured;
+live model availability and credentials have not been verified. Free text is
+stored on a session only when the visitor explicitly enables “Save my answer to
+improve my result”; otherwise the session stores `said.freeText = null`.

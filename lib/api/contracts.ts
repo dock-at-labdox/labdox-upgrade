@@ -38,6 +38,7 @@ export type ClassifyResult = {
   confidence: number;
   clarificationNeeded: boolean;
   deterministicOnly: boolean;
+  fallbackMessage?: string;
 };
 
 export type RecommendationBlockType =

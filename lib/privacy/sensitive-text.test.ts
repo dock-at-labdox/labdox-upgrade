@@ -6,7 +6,7 @@ describe("isSafeFreeTextForPersistence", () => {
   it.each([
     "Contact me at person@example.com",
     "Call me at +91 98765 43210",
-    "api_key=abcdef123456789",
+    "api key is abcdef123456789",
     "password: MySecretPassword123",
     "Bearer abcdefghijklmnopqrstuvwxyz",
     "My key is sk-1234567890abcdef",

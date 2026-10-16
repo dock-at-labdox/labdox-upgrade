@@ -103,6 +103,7 @@ export const CatalogueRepo = {
       ) {
         throw new Error("Catalogue item has an unsupported type.");
       }
+
       return {
         itemId: item.itemId,
         type: item.type,
@@ -121,6 +122,38 @@ export const CatalogueRepo = {
         themes: item.themes.map((entry) => entry.tag),
         levels: item.level ? [item.level] : [],
       };
+    });
+  },
+
+  async getBySlug(slug: string) {
+    if (!slug.trim()) {
+      throw new Error("Slug is required");
+    }
+
+    const item = await prisma.catalogueItem.findUnique({
+      where: { slug },
+    });
+
+    if (!item || item.status !== "published" || item.needsEditorialReview) {
+      return null;
+    }
+
+    return item;
+  },
+
+  async list(options?: { type?: string }) {
+    const where: Record<string, unknown> = {
+      status: "published",
+      needsEditorialReview: false,
+    };
+
+    if (options?.type) {
+      where.type = options.type;
+    }
+
+    return prisma.catalogueItem.findMany({
+      where,
+      orderBy: { name: "asc" },
     });
   },
 };

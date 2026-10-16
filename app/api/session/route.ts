@@ -8,9 +8,41 @@ import type {
 
 const SESSION_COOKIE = "labdox_session";
 
-export async function POST() {
+type CreateSessionRequest = {
+  pill?: unknown;
+};
+
+export async function POST(request: Request) {
   try {
-    const session = await IntentSessionRepo.create();
+    const rawBody = await request.text();
+    let createBody: CreateSessionRequest = {};
+
+    if (rawBody.trim()) {
+      try {
+        const parsed: unknown = JSON.parse(rawBody);
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+          return NextResponse.json(
+            { error: "The request body must be an object." },
+            { status: 400 },
+          );
+        }
+        createBody = parsed as CreateSessionRequest;
+      } catch {
+        return NextResponse.json(
+          { error: "Invalid JSON request body." },
+          { status: 400 },
+        );
+      }
+    }
+
+    if (createBody.pill !== "red" && createBody.pill !== "blue") {
+      return NextResponse.json(
+        { error: "pill must be red or blue." },
+        { status: 400 },
+      );
+    }
+
+    const session = await IntentSessionRepo.create(createBody.pill);
 
     const body: SessionResponse = {
       sessionId: session.id,

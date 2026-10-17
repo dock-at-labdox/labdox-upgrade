@@ -222,7 +222,7 @@ describe("POST /api/classify", () => {
     );
 
     const warningSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const rawIntent = "I want a private result for example@example.test";
+    const rawIntent = "I want a private result for my career change";
 
     const response = await POST(request({ freeText: rawIntent }));
     const body = await response.json();

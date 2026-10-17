@@ -115,7 +115,20 @@ export async function POST(request: Request) {
     );
   }
 
+  if (containsContactDetails(text)) {
+    return NextResponse.json(
+      {
+        error:
+          "Please remove email addresses and phone numbers before submitting your goal.",
+      },
+      {
+        status: 400,
+      },
+    );
+  }
+
   let authorization;
+
   try {
     authorization = await authorizeAiRequest(
       request,

@@ -36,3 +36,7 @@ test-results/
 
 # local dumps (Swipepages media export, etc.)
 tmp/
+
+# Local environment backups and generated audit artifacts
+.env.backup*
+supabase/config.toml.backup

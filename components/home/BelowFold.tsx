@@ -6,7 +6,7 @@ export function BelowFold() {
       <div className="mx-auto max-w-2xl">
         <h2 className="text-2xl text-ink">What is Labdox</h2>
         <p className="mt-4 text-ink-dim">
-          Labdox is an intent-based learning studio. The homepage asks which kind of help you want — a guided
+          Labdox is an intent-based learning studio. The homepage asks which kind of help you want â€” a guided
           path, or a match from what you already know. Proof, pedagogy, and people live on quieter pages.
         </p>
         <p className="mt-4 text-sm text-ink-dim">

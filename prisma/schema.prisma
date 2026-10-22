@@ -18,6 +18,7 @@ model IntentSession {
   said            Json      @default("{}")
   inferred        Json      @default("{}")
   consent         Json      @default("{}")
+  aiMetadata      Json      @default("{}")
   recommendation  Json      @default("{}")
   journeyMap      Json      @default("[]")
   conversionState String    @default("started")
@@ -97,6 +98,17 @@ model AiUsage {
   hourBuckets      Json     @default("{}")
 
   @@map("ai_usage")
+}
+
+model AiRateLimitBucket {
+  identityHash String   @db.VarChar(64)
+  operation    String   @db.VarChar(16)
+  windowStart  DateTime @db.Timestamptz(3)
+  count        Int      @default(0)
+
+  @@id([identityHash, operation, windowStart])
+  @@index([windowStart])
+  @@map("ai_rate_limit_buckets")
 }
 
 // ── Catalogue / taxonomy (seed relational core) ───────────────────

@@ -45,3 +45,35 @@ export const FeedbackRepo = {
     });
   },
 };
+export const CatalogueRepo = {
+  async getBySlug(slug: string) {
+    if (!slug.trim()) {
+      throw new Error("Slug is required");
+    }
+
+    const item = await prisma.catalogueItem.findUnique({
+      where: { slug },
+    });
+
+    if (!item || item.status !== "published") {
+      return null;
+    }
+
+    return item;
+  },
+
+  async list(options?: { type?: string }) {
+    const where: Record<string, unknown> = {
+      status: "published",
+    };
+
+    if (options?.type) {
+      where.type = options.type;
+    }
+
+    return prisma.catalogueItem.findMany({
+      where,
+      orderBy: { name: "asc" },
+    });
+  },
+};

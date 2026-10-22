@@ -1,5 +1,5 @@
 import { prisma } from "./prisma";
-import type { Prisma } from "@prisma/client";
+import type { RecommendationCandidate } from "../engine/recommender";
 
 const SESSION_DURATION_MS = 1000 * 60 * 60 * 24 * 30;
 
@@ -10,10 +10,10 @@ export const IntentSessionRepo = {
     });
   },
 
-  async create() {
+  async create(pill: "red" | "blue") {
     return prisma.intentSession.create({
       data: {
-        pill: "unknown",
+        pill,
         expiresAt: new Date(Date.now() + SESSION_DURATION_MS),
       },
     });
@@ -47,15 +47,84 @@ export const FeedbackRepo = {
   },
 };
 
-  type CatalogueListOptions = {
-  type?: string;
-  domain?: string;
-  level?: string;
-  audience?: string;
-  intent?: string;
-};
-
 export const CatalogueRepo = {
+  async getVersion(): Promise<string | null> {
+    const entry = await prisma.meta.findUnique({
+      where: { key: "catalogueVersion" },
+      select: { value: true },
+    });
+
+    if (typeof entry?.value === "number" && Number.isInteger(entry.value)) {
+      return String(entry.value);
+    }
+
+    if (
+      entry?.value !== null &&
+      typeof entry?.value === "object" &&
+      !Array.isArray(entry.value) &&
+      "n" in entry.value &&
+      typeof entry.value.n === "number" &&
+      Number.isInteger(entry.value.n)
+    ) {
+      return String(entry.value.n);
+    }
+
+    return null;
+  },
+
+  async getRecommendationCandidates(
+    itemIds: string[],
+  ): Promise<RecommendationCandidate[]> {
+    const items = await prisma.catalogueItem.findMany({
+      where: {
+        itemId: { in: itemIds },
+        status: "published",
+        needsEditorialReview: false,
+      },
+      select: {
+        itemId: true,
+        type: true,
+        name: true,
+        status: true,
+        needsEditorialReview: true,
+        intents: { select: { tag: true } },
+        audiences: { select: { tag: true } },
+        themes: { select: { tag: true } },
+        level: true,
+      },
+    });
+
+    return items.map((item) => {
+      if (
+        item.type !== "course" &&
+        item.type !== "track" &&
+        item.type !== "service" &&
+        item.type !== "engagement"
+      ) {
+        throw new Error("Catalogue item has an unsupported type.");
+      }
+
+      return {
+        itemId: item.itemId,
+        type: item.type,
+        name: item.name,
+        status:
+          item.status === "published"
+            ? "published"
+            : item.status === "draft"
+              ? "draft"
+              : item.status === "closed"
+                ? "closed"
+                : "archived",
+        needsEditorialReview: item.needsEditorialReview,
+        intents: item.intents.map((entry) => entry.tag),
+        audiences: item.audiences.map((entry) => entry.tag),
+        themes: item.themes.map((entry) => entry.tag),
+        levels: item.level ? [item.level] : [],
+      };
+    });
+  },
+
   async getBySlug(slug: string) {
     if (!slug.trim()) {
       throw new Error("Slug is required");
@@ -65,16 +134,17 @@ export const CatalogueRepo = {
       where: { slug },
     });
 
-    if (!item || item.status !== "published") {
+    if (!item || item.status !== "published" || item.needsEditorialReview) {
       return null;
     }
 
     return item;
   },
 
-  async list(options?: CatalogueListOptions) {
-    const where: Prisma.CatalogueItemWhereInput = {
-      status: "published", // hard rule: public API mein drafts kabhi nahi
+  async list(options?: { type?: string }) {
+    const where: Record<string, unknown> = {
+      status: "published",
+      needsEditorialReview: false,
     };
 
     if (options?.type) {

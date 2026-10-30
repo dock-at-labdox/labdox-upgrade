@@ -141,7 +141,13 @@ export const CatalogueRepo = {
     return item;
   },
 
-  async list(options?: { type?: string }) {
+  async list(options?: {
+    type?: string;
+    domain?: string;
+    level?: string;
+    audience?: string;
+    intent?: string;
+  }) {
     const where: Record<string, unknown> = {
       status: "published",
       needsEditorialReview: false,
@@ -170,5 +176,3 @@ export const CatalogueRepo = {
     });
   },
 };
-
-

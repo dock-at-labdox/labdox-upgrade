@@ -28,6 +28,10 @@ describe("CatalogueRepo public filtering", () => {
         status: "published",
         needsEditorialReview: false,
       },
+      include: {
+        audiences: true,
+        intents: true,
+      },
       orderBy: { name: "asc" },
     });
   });
@@ -40,6 +44,10 @@ describe("CatalogueRepo public filtering", () => {
         status: "published",
         needsEditorialReview: false,
         type: "course",
+      },
+      include: {
+        audiences: true,
+        intents: true,
       },
       orderBy: { name: "asc" },
     });
@@ -76,12 +84,12 @@ describe("CatalogueRepo public filtering", () => {
 
   it("returns a published item that does not need editorial review", async () => {
     const item = {
-      slug: "published-item",
+      slug: "example-item",
       status: "published",
       needsEditorialReview: false,
     };
     findUnique.mockResolvedValue(item);
 
-    await expect(CatalogueRepo.getBySlug("published-item")).resolves.toEqual(item);
+    await expect(CatalogueRepo.getBySlug("example-item")).resolves.toEqual(item);
   });
 });

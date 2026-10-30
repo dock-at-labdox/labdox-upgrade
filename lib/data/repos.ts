@@ -150,10 +150,25 @@ export const CatalogueRepo = {
     if (options?.type) {
       where.type = options.type;
     }
+    if (options?.domain) {
+      where.domain = options.domain;
+    }
+    if (options?.level) {
+      where.level = options.level;
+    }
+    if (options?.audience) {
+      where.audiences = { some: { tag: options.audience } };
+    }
+    if (options?.intent) {
+      where.intents = { some: { tag: options.intent } };
+    }
 
     return prisma.catalogueItem.findMany({
       where,
+      include: { audiences: true, intents: true },
       orderBy: { name: "asc" },
     });
   },
 };
+
+

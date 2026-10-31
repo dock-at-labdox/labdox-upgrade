@@ -76,9 +76,9 @@ jobs:
           cache: pnpm
           package-manager-cache: false
       - run: pnpm install --frozen-lockfile
-      - uses: supabase/setup-cli@v1
+      - uses: supabase/setup-cli@v3
         with:
-          version: latest
+          version: 2.122.0
       - name: Boot local Supabase + migrate + seed
         run: |
           cp .env.example .env

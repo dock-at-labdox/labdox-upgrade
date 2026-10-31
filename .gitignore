@@ -1,4 +1,4 @@
-# dependencies
+﻿# dependencies
 node_modules/
 
 # next
@@ -6,7 +6,7 @@ node_modules/
 out/
 *.tsbuildinfo
 
-# env — never commit secrets (DEC-028)
+# env - never commit secrets (DEC-028)
 .env
 .env.local
 .env.*.local
@@ -40,3 +40,5 @@ tmp/
 # Local environment backups and generated audit artifacts
 .env.backup*
 supabase/config.toml.backup
+.env.*
+!.env.example

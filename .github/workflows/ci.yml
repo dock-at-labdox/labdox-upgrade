@@ -18,11 +18,19 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - name: Enforce feat/fix/content/docs prefixes
+      - name: Enforce branch naming convention
+        env:
+          BRANCH_NAME: ${{ github.head_ref }}
+          BASE_BRANCH: ${{ github.base_ref }}
         run: |
-          name="${{ github.head_ref }}"
-          echo "$name" | grep -Eq '^(feat|fix|content|docs)/.+' || {
+          if [[ "$BRANCH_NAME" == "development" && "$BASE_BRANCH" == "main" ]]; then
+            echo "Allowed: development → main"
+            exit 0
+          fi
+
+          echo "$BRANCH_NAME" | grep -Eq '^(feat|fix|content|docs)/.+' || {
             echo "Branch must start with feat/, fix/, content/, or docs/"
+            echo "Exception: development → main"
             exit 1
           }
 

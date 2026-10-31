@@ -141,7 +141,13 @@ export const CatalogueRepo = {
     return item;
   },
 
-  async list(options?: { type?: string }) {
+  async list(options?: {
+    type?: string;
+    domain?: string;
+    level?: string;
+    audience?: string;
+    intent?: string;
+  }) {
     const where: Record<string, unknown> = {
       status: "published",
       needsEditorialReview: false,
@@ -150,9 +156,22 @@ export const CatalogueRepo = {
     if (options?.type) {
       where.type = options.type;
     }
+    if (options?.domain) {
+      where.domain = options.domain;
+    }
+    if (options?.level) {
+      where.level = options.level;
+    }
+    if (options?.audience) {
+      where.audiences = { some: { tag: options.audience } };
+    }
+    if (options?.intent) {
+      where.intents = { some: { tag: options.intent } };
+    }
 
     return prisma.catalogueItem.findMany({
       where,
+      include: { audiences: true, intents: true },
       orderBy: { name: "asc" },
     });
   },

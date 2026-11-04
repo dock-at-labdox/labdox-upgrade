@@ -20,6 +20,7 @@ export default async function ExploreCoursesPage() {
         <StatedIntentField
           prompt={copy.blue.prompt}
           placeholders={copy.blue.placeholder}
+          starterChips={copy.blue.starterChips}
         />
 
         <p className="mt-8 text-sm">

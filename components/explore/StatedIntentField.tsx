@@ -5,11 +5,13 @@ import { useEffect, useState } from "react";
 type StatedIntentFieldProps = {
   prompt: string;
   placeholders: readonly string[];
+  starterChips: readonly string[];
 };
 
 export function StatedIntentField({
   prompt,
   placeholders,
+  starterChips,
 }: StatedIntentFieldProps) {
   const [intent, setIntent] = useState("");
   const [placeholderIndex, setPlaceholderIndex] = useState(0);
@@ -21,9 +23,7 @@ export function StatedIntentField({
     }
 
     const timer = window.setInterval(() => {
-      setPlaceholderIndex(
-        (current) => (current + 1) % placeholders.length,
-      );
+      setPlaceholderIndex((current) => (current + 1) % placeholders.length);
     }, 3000);
 
     return () => window.clearInterval(timer);
@@ -34,10 +34,7 @@ export function StatedIntentField({
 
   return (
     <>
-      <form
-        className="mt-10"
-        onSubmit={(event) => event.preventDefault()}
-      >
+      <form className="mt-10" onSubmit={(event) => event.preventDefault()}>
         <label
           htmlFor="blue-intent"
           className="block font-mono text-sm text-electric"
@@ -62,7 +59,7 @@ export function StatedIntentField({
           className="mt-5 flex flex-wrap gap-2"
           aria-label="Starter searches"
         >
-          {placeholders.map((chip) => (
+          {starterChips.map((chip) => (
             <button
               key={chip}
               type="button"
